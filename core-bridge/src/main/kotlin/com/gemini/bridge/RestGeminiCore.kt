@@ -99,6 +99,7 @@ class RestGeminiCore(
             GenerateImageTool(
                 getApiKey = { this@RestGeminiCore.apiKey },
                 getModel = { prefs.imagenModel ?: DEFAULT_IMAGEN_MODEL },
+                getBaseUrl = { this@RestGeminiCore.baseUrl },
                 persist = { id, bytes, mime ->
                     persistAttachmentBytes(id, bytes, mime)
                 }
@@ -107,6 +108,7 @@ class RestGeminiCore(
     }
 
     private var apiKey: String = ""
+    @Volatile private var baseUrl: String = DEFAULT_BASE_URL
     private var model: String = defaultModel
     private var autoApproveDestructive = false
     private var idCounter = 0L
@@ -123,6 +125,7 @@ class RestGeminiCore(
     init {
         // Restore non-sensitive prefs eagerly; the API key is injected via init().
         prefs.model?.let { if (it.isNotBlank()) model = it }
+        prefs.baseUrl?.let { if (it.isNotBlank()) baseUrl = it }
         autoApproveDestructive = prefs.autoApprove
         prefs.workspaceUri?.let { uri ->
             runCatching { workspace.setTreeUri(Uri.parse(uri)) }
@@ -146,6 +149,9 @@ class RestGeminiCore(
         apiKey = (config["api_key"] ?: config["apiKey"] ?: "").toString().trim()
         val requestedModel = (config["model"] as? String)?.ifBlank { null }
         if (requestedModel != null) model = requestedModel
+        if (config.containsKey("base_url")) {
+            baseUrl = normalizeBaseUrl(config["base_url"]?.toString())
+        }
         if (apiKey.isBlank()) return GeminiResult.Error("API key is required")
         // Best-effort live model fetch; if it fails we keep the static fallback.
         runCatching { discoveredModels = fetchAvailableModels() }
@@ -155,6 +161,7 @@ class RestGeminiCore(
         }
         if (rememberKey) prefs.apiKey = apiKey
         prefs.model = model
+        prefs.baseUrl = if (baseUrl == DEFAULT_BASE_URL) null else baseUrl
         return GeminiResult.Success("Ready")
     }
 
@@ -249,6 +256,7 @@ class RestGeminiCore(
         pending.clear()
         discoveredModels = AVAILABLE_MODELS
         model = defaultModel
+        baseUrl = DEFAULT_BASE_URL
         chatStore.clearCurrent()
         prefs.clearAll()
     }
@@ -275,7 +283,7 @@ class RestGeminiCore(
 
     private suspend fun fetchAvailableModels(): List<String> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) return@withContext AVAILABLE_MODELS
-        val url = "https://generativelanguage.googleapis.com/v1beta/models" +
+        val url = "$baseUrl/v1beta/models" +
             "?key=${URLEncoder.encode(apiKey, "UTF-8")}&pageSize=200"
         val (code, body) = getJson(url)
         if (code !in 200..299) return@withContext AVAILABLE_MODELS
@@ -464,7 +472,7 @@ class RestGeminiCore(
 
     private suspend fun streamOnce(): Pair<String?, List<ToolCall>> = withContext(Dispatchers.IO) {
         val body = buildRequestBody()
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/" +
+        val url = "$baseUrl/v1beta/models/" +
             "$model:streamGenerateContent?alt=sse&key=${URLEncoder.encode(apiKey, "UTF-8")}"
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
@@ -801,6 +809,23 @@ class RestGeminiCore(
     companion object {
         private const val TAG = "RestGeminiCore"
         const val DEFAULT_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
+
+        /**
+         * Normalises a user-typed server address: trims spaces and trailing
+         * slashes, drops a pasted `/v1beta` suffix, adds `http://` when no
+         * scheme was typed. Blank input means Google's default endpoint.
+         */
+        fun normalizeBaseUrl(raw: String?): String {
+            var s = raw?.trim().orEmpty()
+            if (s.isEmpty()) return DEFAULT_BASE_URL
+            if (!s.startsWith("http://", ignoreCase = true) && !s.startsWith("https://", ignoreCase = true)) {
+                s = "http://$s"
+            }
+            s = s.trimEnd('/')
+            if (s.endsWith("/v1beta")) s = s.removeSuffix("/v1beta").trimEnd('/')
+            return s
+        }
         const val DEFAULT_IMAGEN_MODEL = "imagen-3.0-generate-002"
         // Used as a static fallback before the API model-discovery call lands.
         // The real model list is fetched live from /v1beta/models.

@@ -24,7 +24,8 @@ import java.net.URL
 class GenerateImageTool(
     private val getApiKey: () -> String,
     private val getModel: () -> String,
-    private val persist: (id: String, bytes: ByteArray, mime: String) -> String?
+    private val persist: (id: String, bytes: ByteArray, mime: String) -> String?,
+    private val getBaseUrl: () -> String = { "https://generativelanguage.googleapis.com" }
 ) : Tool {
 
     override val spec = ToolSpec(
@@ -66,7 +67,7 @@ class GenerateImageTool(
         if (apiKey.isBlank()) return@withContext ToolOutput.error(call.id, "Gemini API key is not configured")
 
         val model = getModel()
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:predict")
+        val url = URL("${getBaseUrl()}/v1beta/models/$model:predict")
         val body = JSONObject()
             .put(
                 "instances",

@@ -56,6 +56,7 @@ fun LoginScreen(
 ) {
     val context = LocalContext.current
     var apiKey by remember { mutableStateOf("") }
+    var baseUrl by remember { mutableStateOf("") }
 
     val dusk = LocalGeminiColors.current.duskGradient
     Box(
@@ -162,7 +163,7 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = { apiKey = it },
-                        label = { Text("Gemini API key") },
+                        label = { Text("API key (Gemini or your proxy)") },
                         placeholder = { Text("AIza…") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
@@ -177,6 +178,16 @@ fun LoginScreen(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("Server address (optional)") },
+                    placeholder = { Text("http://127.0.0.1:8787") },
+                    supportingText = { Text("Empty = Google Gemini. For a local proxy in Termux use the address above.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
                 if (isLoading) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
@@ -188,7 +199,7 @@ fun LoginScreen(
                 } else {
                     Button(
                         onClick = {
-                            if (apiKey.isNotBlank()) onLoginSuccess(mapOf("api_key" to apiKey.trim()))
+                            if (apiKey.isNotBlank()) onLoginSuccess(mapOf("api_key" to apiKey.trim(), "base_url" to baseUrl.trim()))
                         },
                         enabled = apiKey.isNotBlank(),
                         modifier = Modifier.fillMaxWidth()
